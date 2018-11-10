@@ -14,10 +14,20 @@ class StudentSocketImpl extends BaseSocketImpl {
   //   protected int port;
   //   protected int localport;
 
+  private enum State {
+    CLOSED, LISTEN, SYN_SENT, SYN_RCVD, ESTABLISHED, CLOSE_WAIT, FIN_WAIT_1,
+    CLOSING, FIN_WAIT_2, TIME_WAIT, LAST_ACK
+  }
+
+  private State currentState;
+
   private Demultiplexer D;
   private Timer tcpTimer;
+  private int current_sequence;
+  private int current_ack;
 
   StudentSocketImpl(Demultiplexer D) { // default constructor
+    currentState = State.CLOSED;
     this.D = D;
   }
 
@@ -29,7 +39,26 @@ class StudentSocketImpl extends BaseSocketImpl {
    * @exception IOException if an I/O error occurs when attempting a connection.
    */
   public synchronized void connect(InetAddress address, int port) throws IOException {
-    localport = D.getNextAvailablePort();
+    if (currentState == State.CLOSED) {
+      localport = D.getNextAvailablePort();
+      this.port = port;
+      this.address = address;
+      D.registerConnection(address, localport, port, this);
+      TCPWrapper.send(new TCPPacket(localport,
+              port, current_sequence, current_ack, false, true,
+              false, 0, null), address);
+      currentState = State.SYN_SENT;
+      current_sequence++;
+
+      while (currentState != State.ESTABLISHED) {
+        try {
+          wait();
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        }
+      }
+    }
+
   }
 
   /**
@@ -37,7 +66,59 @@ class StudentSocketImpl extends BaseSocketImpl {
    *
    * @param p The packet that arrived
    */
-  public synchronized void receivePacket(TCPPacket p) {}
+  public synchronized void receivePacket(TCPPacket p) {
+    logPacket(p);
+    switch (currentState) {
+      case SYN_SENT:
+        if (p.synFlag && p.ackFlag) {
+          current_ack = p.ackNum;
+          TCPWrapper.send(new TCPPacket(localport, port, current_sequence,
+                  current_ack, true, false, false,
+                  0, null), address);
+          currentState = State.ESTABLISHED;
+        }
+        break;
+      case ESTABLISHED:
+        if (!p.finFlag) {
+          current_sequence = p.ackNum;
+          current_ack += p.data.length;
+        }
+        break;
+      case LISTEN:
+        if (p.synFlag && !p.ackFlag) {
+          current_sequence = p.ackNum;
+          current_ack = p.seqNum + 1;
+          port = p.sourcePort;
+          address = p.sourceAddr;
+          TCPWrapper.send(new TCPPacket(localport, port, current_sequence,
+                  current_ack, true, true, false,
+                  0, null), address);
+          currentState = State.SYN_RCVD;
+          try{
+            D.unregisterListeningSocket(localport, this);
+            D.registerConnection(address, localport, port, this);
+          } catch (IOException e) {
+            e.printStackTrace();
+            return;
+          }
+        }
+        break;
+      case SYN_RCVD:
+        if (p.seqNum == 1 && p.ackNum == 1 && p.ackFlag) {
+          currentState = State.ESTABLISHED;
+        }
+        break;
+    }
+    this.notifyAll();
+  }
+
+  private void logPacket(TCPPacket packet) {
+    String message = String.format("\n===Packet Received===\n" +
+            "Source Address: %s\nSource Port: %s\nDestination Port: %s\n",
+            packet.sourceAddr.getHostAddress(), packet.sourcePort,
+            packet.destPort);
+    System.out.println(message);
+  }
 
   /**
    * Waits for an incoming connection to arrive to connect this socket to Ultimately this is called
@@ -45,7 +126,20 @@ class StudentSocketImpl extends BaseSocketImpl {
    * that will be returned, not the listening ServerSocket. Note that localport is already set prior
    * to this being called.
    */
-  public synchronized void acceptConnection() throws IOException {}
+  public synchronized void acceptConnection() throws IOException {
+    if (currentState == State.CLOSED) {
+      localport = D.getNextAvailablePort();
+      D.registerListeningSocket(localport, this);
+      currentState = State.LISTEN;
+      while (currentState != State.ESTABLISHED) {
+        try {
+          wait();
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        }
+      }
+    }
+  }
 
   /**
    * Returns an input stream for this socket. Note that this method cannot create a NEW InputStream,
@@ -78,7 +172,9 @@ class StudentSocketImpl extends BaseSocketImpl {
    *
    * @exception IOException if an I/O error occurs when closing this socket.
    */
-  public synchronized void close() throws IOException {}
+  public synchronized void close() throws IOException {
+
+  }
 
   /**
    * create TCPTimerTask instance, handling tcpTimer creation
