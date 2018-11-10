@@ -47,7 +47,7 @@ class StudentSocketImpl extends BaseSocketImpl {
       TCPWrapper.send(new TCPPacket(localport,
               port, current_sequence, current_ack, false, true,
               false, 0, null), address);
-      currentState = State.SYN_SENT;
+      transitonState(State.SYN_SENT);
       current_sequence++;
 
       while (currentState != State.ESTABLISHED) {
@@ -75,7 +75,7 @@ class StudentSocketImpl extends BaseSocketImpl {
           TCPWrapper.send(new TCPPacket(localport, port, current_sequence,
                   current_ack, true, false, false,
                   0, null), address);
-          currentState = State.ESTABLISHED;
+          transitonState(State.ESTABLISHED);
         }
         break;
       case ESTABLISHED:
@@ -93,7 +93,7 @@ class StudentSocketImpl extends BaseSocketImpl {
           TCPWrapper.send(new TCPPacket(localport, port, current_sequence,
                   current_ack, true, true, false,
                   0, null), address);
-          currentState = State.SYN_RCVD;
+          transitonState(State.SYN_RCVD);
           try{
             D.unregisterListeningSocket(localport, this);
             D.registerConnection(address, localport, port, this);
@@ -104,8 +104,8 @@ class StudentSocketImpl extends BaseSocketImpl {
         }
         break;
       case SYN_RCVD:
-        if (p.seqNum == 1 && p.ackNum == 1 && p.ackFlag) {
-          currentState = State.ESTABLISHED;
+        if (p.ackFlag) {
+          transitonState(State.ESTABLISHED);
         }
         break;
     }
@@ -120,6 +120,12 @@ class StudentSocketImpl extends BaseSocketImpl {
     System.out.println(message);
   }
 
+  private void transitonState(State newState) {
+    System.out.println(String.format("!!!%s->%s", currentState.toString(),
+            newState.toString()));
+    currentState = newState;
+  }
+
   /**
    * Waits for an incoming connection to arrive to connect this socket to Ultimately this is called
    * by the application calling ServerSocket.accept(), but this method belongs to the Socket object
@@ -130,7 +136,7 @@ class StudentSocketImpl extends BaseSocketImpl {
     if (currentState == State.CLOSED) {
       localport = D.getNextAvailablePort();
       D.registerListeningSocket(localport, this);
-      currentState = State.LISTEN;
+      transitonState(State.LISTEN);
       while (currentState != State.ESTABLISHED) {
         try {
           wait();
