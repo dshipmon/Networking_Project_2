@@ -189,6 +189,7 @@ class StudentSocketImpl extends BaseSocketImpl {
         if (p.finFlag) {
           resendPacketFromState(address, State.CLOSE_WAIT);
         }
+
       case TIME_WAIT:
         if (p.finFlag) {
           resendPacketFromState(address, State.FIN_WAIT_2);
