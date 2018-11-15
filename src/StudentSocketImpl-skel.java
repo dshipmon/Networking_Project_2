@@ -193,6 +193,11 @@ class StudentSocketImpl extends BaseSocketImpl {
         if (p.finFlag) {
           resendPacketFromState(address, State.FIN_WAIT_2);
         }
+        if (p.ackFlag) {
+          if (prevState == State.CLOSING) {
+            resendPacketFromState(address, State.FIN_WAIT_1);
+          }
+        }
     }
     this.notifyAll();
   }
