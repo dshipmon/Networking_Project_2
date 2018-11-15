@@ -71,7 +71,7 @@ class StudentSocketImpl extends BaseSocketImpl {
             port, current_sequence, current_ack, ackFlag, synFlag,
             finFlag, 0, null);
     TCPWrapper.send(packToSend, address);
-    if (ackFlag && !synFlag) {
+    if (!(ackFlag && !synFlag)) {
       createTimerTask(2500, null);
     }
     packetsSent.putIfAbsent(currentState, packToSend);
@@ -115,7 +115,8 @@ class StudentSocketImpl extends BaseSocketImpl {
       case LISTEN:
         if (p.synFlag && !p.ackFlag) {
 
-          updateSeqAckAndAddress(p);
+          port = p.sourcePort;
+          address = p.sourceAddr;
           sendPacket(address, localport, port, current_sequence, current_ack, true, true, false);
           transitonState(State.SYN_RCVD);
           try{
@@ -203,8 +204,6 @@ class StudentSocketImpl extends BaseSocketImpl {
   private void updateSeqAckAndAddress(TCPPacket p) {
     current_sequence = p.ackNum;
     current_ack = p.seqNum + 1;
-    port = p.sourcePort;
-    address = p.sourceAddr;
   }
 
   private void logPacket(TCPPacket packet) {
