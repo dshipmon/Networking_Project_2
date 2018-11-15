@@ -330,7 +330,7 @@ class StudentSocketImpl extends BaseSocketImpl {
   }
 
   private class FinishRunnable implements Runnable {
-    private StudentSocketImpl currentSock;
+    private final StudentSocketImpl currentSock;
 
     FinishRunnable(StudentSocketImpl currentSock) {
       this.currentSock = currentSock;
@@ -340,7 +340,9 @@ class StudentSocketImpl extends BaseSocketImpl {
     public void run() {
       while (currentState != State.CLOSED) {
         try {
-          currentSock.wait();
+          synchronized (currentSock) {
+            currentSock.wait();
+          }
         } catch (InterruptedException e) {
           e.printStackTrace();
         }
