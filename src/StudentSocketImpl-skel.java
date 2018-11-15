@@ -79,7 +79,7 @@ class StudentSocketImpl extends BaseSocketImpl {
 
   private void resendPacketFromState(InetAddress address, State state) {
     TCPWrapper.send(packetsSent.get(state), address);
-    if (packetsSent.get(state).ackFlag && !packetsSent.get(state).synFlag) {
+    if (!(packetsSent.get(state).ackFlag && !packetsSent.get(state).synFlag)) {
       createTimerTask(2500, null);
     }
   }
