@@ -273,14 +273,16 @@ class StudentSocketImpl extends BaseSocketImpl {
    * @exception IOException if an I/O error occurs when closing this socket.
    */
   public synchronized void close() throws IOException {
-    sendPacket(address, localport, port, current_sequence, current_ack, false, false, true);
+    if (currentState != State.CLOSED) {
+      sendPacket(address, localport, port, current_sequence, current_ack, false, false, true);
 
-    if (currentState == State.ESTABLISHED) {
-      transitonState(State.FIN_WAIT_1);
-    } else if (currentState == State.CLOSE_WAIT) {
-      transitonState(State.LAST_ACK);
+      if (currentState == State.ESTABLISHED) {
+        transitonState(State.FIN_WAIT_1);
+      } else if (currentState == State.CLOSE_WAIT) {
+        transitonState(State.LAST_ACK);
+      }
+      new FinishRunnable(this).run();
     }
-    new finishRunnable(this).run();
   }
 
   /**
@@ -320,10 +322,10 @@ class StudentSocketImpl extends BaseSocketImpl {
     }
   }
 
-  private class finishRunnable implements Runnable {
+  private class FinishRunnable implements Runnable {
     private StudentSocketImpl currentSock;
 
-    finishRunnable(StudentSocketImpl currentSock) {
+    FinishRunnable(StudentSocketImpl currentSock) {
       this.currentSock = currentSock;
     }
 
