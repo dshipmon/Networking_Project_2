@@ -1,5 +1,6 @@
 import java.net.*;
 import java.io.*;
+import java.util.HashMap;
 import java.util.Timer;
 
 /**
@@ -20,15 +21,18 @@ class StudentSocketImpl extends BaseSocketImpl {
   }
 
   private State currentState;
+  private State prevState;
 
   private Demultiplexer D;
   private Timer tcpTimer;
   private int current_sequence;
   private int current_ack;
+  private HashMap<State, TCPPacket> packetsSent;
 
   StudentSocketImpl(Demultiplexer D) { // default constructor
     currentState = State.CLOSED;
     this.D = D;
+    packetsSent = new HashMap<>();
   }
 
   /**
@@ -44,9 +48,7 @@ class StudentSocketImpl extends BaseSocketImpl {
       this.port = port;
       this.address = address;
       D.registerConnection(address, localport, port, this);
-      TCPWrapper.send(new TCPPacket(localport,
-              port, current_sequence, current_ack, false, true,
-              false, 0, null), address);
+      sendPacket(address, localport, port, current_sequence, current_ack, false, true, false);
       transitonState(State.SYN_SENT);
       current_sequence++;
 
@@ -61,6 +63,27 @@ class StudentSocketImpl extends BaseSocketImpl {
 
   }
 
+  private void sendPacket(InetAddress address, int localPort, int port,
+                                 int current_sequence, int current_ack,
+                                 boolean ackFlag, boolean synFlag,
+                                 boolean finFlag) {
+    TCPPacket packToSend = new TCPPacket(localPort,
+            port, current_sequence, current_ack, ackFlag, synFlag,
+            finFlag, 0, null);
+    TCPWrapper.send(packToSend, address);
+    if (ackFlag && !synFlag) {
+      createTimerTask(2500, null);
+    }
+    packetsSent.putIfAbsent(currentState, packToSend);
+  }
+
+  private void resendPacketFromState(InetAddress address, State state) {
+    TCPWrapper.send(packetsSent.get(state), address);
+    if (packetsSent.get(state).ackFlag && !packetsSent.get(state).synFlag) {
+      createTimerTask(2500, null);
+    }
+  }
+
   /**
    * Called by Demultiplexer when a packet comes in for this connection
    *
@@ -71,28 +94,29 @@ class StudentSocketImpl extends BaseSocketImpl {
     switch (currentState) {
       case SYN_SENT:
         if (p.synFlag && p.ackFlag) {
+          stopTimer();
+
           current_ack = p.ackNum;
-          TCPWrapper.send(new TCPPacket(localport, port, current_sequence,
-                  current_ack, true, false, false,
-                  0, null), address);
+          sendPacket(address, localport, port, current_sequence, current_ack, true, false, false);
           transitonState(State.ESTABLISHED);
         }
         break;
+
       case ESTABLISHED:
-        if (!p.finFlag) {
-          current_sequence = p.ackNum;
-          current_ack += p.data.length;
+        if (p.finFlag) {
+          updateSeqAckAndAddress(p);
+          sendPacket(address, localport, port, current_sequence, current_ack, true, false, false);
+          transitonState(State.CLOSE_WAIT);
+        } else if (p.synFlag && p.ackFlag) {
+          resendPacketFromState(address, State.SYN_SENT);
         }
         break;
+
       case LISTEN:
         if (p.synFlag && !p.ackFlag) {
-          current_sequence = p.ackNum;
-          current_ack = p.seqNum + 1;
-          port = p.sourcePort;
-          address = p.sourceAddr;
-          TCPWrapper.send(new TCPPacket(localport, port, current_sequence,
-                  current_ack, true, true, false,
-                  0, null), address);
+
+          updateSeqAckAndAddress(p);
+          sendPacket(address, localport, port, current_sequence, current_ack, true, true, false);
           transitonState(State.SYN_RCVD);
           try{
             D.unregisterListeningSocket(localport, this);
@@ -103,13 +127,84 @@ class StudentSocketImpl extends BaseSocketImpl {
           }
         }
         break;
+
       case SYN_RCVD:
         if (p.ackFlag) {
+          stopTimer();
           transitonState(State.ESTABLISHED);
+        } else if (p.synFlag) {
+          resendPacketFromState(address, State.LISTEN);
         }
         break;
+
+      case FIN_WAIT_1:
+        if (p.finFlag) {
+          updateSeqAckAndAddress(p);
+          sendPacket(address, localport, port, current_sequence, current_ack, true, false, false);
+          transitonState(State.CLOSING);
+        } else if (p.ackFlag) {
+          if (p.synFlag) {
+            resendPacketFromState(address, State.SYN_SENT);
+          } else {
+            stopTimer();
+            transitonState(State.FIN_WAIT_2);
+          }
+        }
+        break;
+
+      case CLOSING:
+        if (p.ackFlag) {
+          stopTimer();
+          transitonState(State.TIME_WAIT);
+          createTimerTask(30000, null);
+        }
+        else if (p.finFlag) {
+          resendPacketFromState(address, State.FIN_WAIT_1);
+        }
+        break;
+
+      case FIN_WAIT_2:
+        if (p.finFlag) {
+          updateSeqAckAndAddress(p);
+          sendPacket(address, localport, port, current_sequence, current_ack, true, false, false);
+          transitonState(State.TIME_WAIT);
+          createTimerTask(30000, null);
+        }
+        break;
+
+      case CLOSE_WAIT:
+        if (p.finFlag) {
+          resendPacketFromState(address, State.ESTABLISHED);
+        }
+        break;
+
+      case LAST_ACK:
+        if (p.ackFlag) {
+          stopTimer();
+          transitonState(State.TIME_WAIT);
+          createTimerTask(30000, null);
+        }
+        if (p.finFlag) {
+          resendPacketFromState(address, State.CLOSE_WAIT);
+        }
+      case TIME_WAIT:
+        if (p.finFlag) {
+          resendPacketFromState(address, State.FIN_WAIT_2);
+        }
     }
     this.notifyAll();
+  }
+
+  private void stopTimer() {
+    tcpTimer.cancel();
+    tcpTimer = null;
+  }
+
+  private void updateSeqAckAndAddress(TCPPacket p) {
+    current_sequence = p.ackNum;
+    current_ack = p.seqNum + 1;
+    port = p.sourcePort;
+    address = p.sourceAddr;
   }
 
   private void logPacket(TCPPacket packet) {
@@ -121,8 +216,9 @@ class StudentSocketImpl extends BaseSocketImpl {
   }
 
   private void transitonState(State newState) {
-    System.out.println(String.format("!!!%s->%s", currentState.toString(),
+    System.out.println(String.format("!!! %s->%s", currentState.toString(),
             newState.toString()));
+    prevState = currentState;
     currentState = newState;
   }
 
@@ -134,8 +230,7 @@ class StudentSocketImpl extends BaseSocketImpl {
    */
   public synchronized void acceptConnection() throws IOException {
     if (currentState == State.CLOSED) {
-      localport = D.getNextAvailablePort();
-      D.registerListeningSocket(localport, this);
+      D.registerListeningSocket(this.localport, this);
       transitonState(State.LISTEN);
       while (currentState != State.ESTABLISHED) {
         try {
@@ -179,7 +274,14 @@ class StudentSocketImpl extends BaseSocketImpl {
    * @exception IOException if an I/O error occurs when closing this socket.
    */
   public synchronized void close() throws IOException {
+    sendPacket(address, localport, port, current_sequence, current_ack, false, false, true);
 
+    if (currentState == State.ESTABLISHED) {
+      transitonState(State.FIN_WAIT_1);
+    } else if (currentState == State.CLOSE_WAIT) {
+      transitonState(State.LAST_ACK);
+    }
+    new finishRunnable(this).run();
   }
 
   /**
@@ -203,7 +305,38 @@ class StudentSocketImpl extends BaseSocketImpl {
   public synchronized void handleTimer(Object ref) {
 
     // this must run only once the last timer (30 second timer) has expired
-    tcpTimer.cancel();
-    tcpTimer = null;
+    stopTimer();
+
+    if (currentState == State.TIME_WAIT) {
+      transitonState(State.CLOSED);
+      notifyAll();
+
+      try {
+        D.unregisterConnection(address, localport, port, this);
+      } catch (IOException e) {
+        e.printStackTrace();
+      }
+    } else {
+      resendPacketFromState(address, prevState);
+    }
+  }
+
+  private class finishRunnable implements Runnable {
+    private StudentSocketImpl currentSock;
+
+    finishRunnable(StudentSocketImpl currentSock) {
+      this.currentSock = currentSock;
+    }
+
+    @Override
+    public void run() {
+      while (currentState != State.CLOSED) {
+        try {
+          currentSock.wait();
+        } catch (InterruptedException e) {
+          e.printStackTrace();
+        }
+      }
+    }
   }
 }
