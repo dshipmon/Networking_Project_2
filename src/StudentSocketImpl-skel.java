@@ -288,7 +288,7 @@ class StudentSocketImpl extends BaseSocketImpl {
       } else if (currentState == State.CLOSE_WAIT) {
         transitonState(State.LAST_ACK);
       }
-      new FinishRunnable(this).run();
+      new Thread(new FinishRunnable(this)).start();
     }
   }
 
