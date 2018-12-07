@@ -77,6 +77,10 @@ class StudentSocketImpl extends BaseSocketImpl {
     packetsSent.putIfAbsent(currentState, packToSend);
   }
 
+  /** Resends a packet that was already sent when at the given state.
+   * @param address The address to send the packet to.
+   * @param state The state where the packet was sent in.
+   */
   private void resendPacketFromState(InetAddress address, State state) {
     TCPWrapper.send(packetsSent.get(state), address);
     System.out.println("Resending packet from state: " + state.toString());
@@ -86,12 +90,14 @@ class StudentSocketImpl extends BaseSocketImpl {
   }
 
   /**
-   * Called by Demultiplexer when a packet comes in for this connection
+   * Called by Demultiplexer when a packet comes in for this connection.
    *
    * @param p The packet that arrived
    */
   public synchronized void receivePacket(TCPPacket p) {
     logPacket(p);
+    // Cases for each state and the expected packet and response. This includes
+    // error correction where packets will be resent.
     switch (currentState) {
       case SYN_SENT:
         if (p.synFlag && p.ackFlag) {
@@ -208,6 +214,10 @@ class StudentSocketImpl extends BaseSocketImpl {
     tcpTimer = null;
   }
 
+  /**
+   * Updates the sequence and ack number from the incoming packet.
+   * @param p Newly received packet.
+   */
   private void updateSeqAckAndAddress(TCPPacket p) {
     current_sequence = p.ackNum;
     current_ack = p.seqNum + 1;
@@ -329,6 +339,10 @@ class StudentSocketImpl extends BaseSocketImpl {
     }
   }
 
+  /**
+   * Runnable to manage closing the socket and releasing the caller of the close
+   * method. This runnable is passed to a thread anonymously.
+   */
   private class FinishRunnable implements Runnable {
     private final StudentSocketImpl currentSock;
 
