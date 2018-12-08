@@ -36,7 +36,7 @@ import java.io.*;
 //
 //   localPort is the port of the current SIDE of the connection.  on
 //   the OTHER side of the connection, localPort and remotePort will be
-//   switched.
+//   switched. 
 //
 //   when sending a packet,
 //     sourcePort = localPort;
@@ -88,11 +88,11 @@ class Demultiplexer extends Thread {
         DatagramSocket ds;
         try{
             ds = new DatagramSocket(portForUDP);
-
+            
             // MAIN LOOP OF THE THREAD:
             //--------------------------------------
             while (true) {
-
+                
                 // listen for UDP datagrams this function blocks, which
                 // is what we want.
                 p = new DatagramPacket(buf,TCPPacket.MAX_PACKET_SIZE+20);
@@ -106,7 +106,7 @@ class Demultiplexer extends Thread {
                                    p.getAddress()+" size="+p.getLength());
                 System.out.println(">>> "+packet+"\n");
 
-
+                
                 // invoke demultiplex - will NOT return until the packet
                 // has been processed completely.
                 demultiplex(packet);
@@ -117,10 +117,10 @@ class Demultiplexer extends Thread {
             System.out.println("EXCEPTION RECEIVED: \n"+e);
             System.exit(1);
         }
-
+    
     }
 
-
+    
     // receives the TCP packet, decides which connection to pass it off
     // to.  also handles special case of a new connection, or an
     // un-usable packet.
@@ -141,7 +141,7 @@ class Demultiplexer extends Thread {
         // either we find connection in the connectionTable, or we find
         // it in the listeningTable, or we dont find the connection at all.
 
-
+        
         if (c!=null){ // if connection found
             // System.out.println("%% connection found: "+c);
             c.receivePacket( packet );
@@ -152,7 +152,7 @@ class Demultiplexer extends Thread {
             // listening sockets - of course, the packet received had to
             // be a SYN for this search to be necessary.
 
-
+            
             // try and find the listener in the listeningTable this time.
             hashString = getHashTableKey(packet.destPort);
 
@@ -184,12 +184,12 @@ class Demultiplexer extends Thread {
             throw(new IOException("%% CONNECTION EXISTS ALREADY"));
         listeningTable.put(hashKey, connection);
     }
-
+    
     // adds a StudentSocketImpl to the connectionTable hashTable.
     synchronized public void registerConnection(InetAddress remoteHost,
                                    int localPort, int remotePort,
                                    StudentSocketImpl connection) throws IOException{
-
+        
         // String is a reasonable hash key to identify a unique
         // combination of these 3 variables.
         String hashKey = getHashTableKey(remoteHost,localPort,remotePort);
@@ -206,14 +206,14 @@ class Demultiplexer extends Thread {
         if (listeningTable.get(hashKey)!=connection )
             // must be the EXACT SAME reference
             throw(new IOException("%% CANNOT UNREGISTER LISTENING SOCKET"));
-
+        
         listeningTable.remove(hashKey);
     }
 
     synchronized public void unregisterConnection(InetAddress remoteHost,
                                    int localPort, int remotePort,
                                    StudentSocketImpl connection) throws IOException{
-
+        
         String hashKey = getHashTableKey(remoteHost,localPort,remotePort);
         if (connectionTable.get(hashKey)!=connection)
             // must be the EXACT SAME reference
@@ -245,5 +245,5 @@ class Demultiplexer extends Thread {
         // for DEBUGGING only!!!
 
     }
-
+    
 }

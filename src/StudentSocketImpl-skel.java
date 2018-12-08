@@ -32,13 +32,49 @@ class StudentSocketImpl extends BaseSocketImpl {
   private static final int LAST_ACK = 9;
   private static final int TIME_WAIT = 10;
 
+  private PipedOutputStream appOS;
+  private PipedInputStream appIS;
+
+  private PipedInputStream pipeAppToSocket;
+  private PipedOutputStream pipeSocketToApp;
+
+  private SocketReader reader;
+  private SocketWriter writer;
+
+  private boolean terminating = false;
+
+  private InfiniteBuffer sendBuffer;
+  private InfiniteBuffer recvBuffer;
+
+
   StudentSocketImpl(Demultiplexer D) {  // default constructor
     this.D = D;
     state = CLOSED;
     seqNum = -1;
     ackNum = -1;
-    timerList = new Hashtable<Integer, TCPTimerTask>();
-    packetList = new Hashtable<Integer, TCPPacket>();
+    timerList = new Hashtable<>();
+    packetList = new Hashtable<>();
+
+    try {
+      pipeAppToSocket = new PipedInputStream();
+      pipeSocketToApp = new PipedOutputStream();
+
+      appIS = new PipedInputStream(pipeSocketToApp);
+      appOS = new PipedOutputStream(pipeAppToSocket);
+    }
+    catch(IOException e){
+      System.err.println("unable to create piped sockets");
+      System.exit(1);
+    }
+
+
+    initBuffers();
+
+    reader = new SocketReader(pipeAppToSocket, this);
+    reader.start();
+
+    writer = new SocketWriter(pipeSocketToApp, this);
+    writer.start();
   }
 
   private String stateString(int inState){
@@ -95,45 +131,41 @@ class StudentSocketImpl extends BaseSocketImpl {
   }
 
   private synchronized void sendPacket(TCPPacket inPacket, boolean resend){
-    if(inPacket.ackFlag == true && inPacket.synFlag == false){
+    if(inPacket.ackFlag && !inPacket.synFlag){
       inPacket.seqNum = -2;
     }
 
-    if(resend == false){ //new timer, and requires the current state as a key
+    if(!resend){ //new timer, and requires the current state as a key
       TCPWrapper.send(inPacket, address);
 
       //only do timers for syns, syn-acks, and fins
-      if(inPacket.synFlag == true || inPacket.finFlag == true){
-        System.out.println("Creating new TimerTask at state " + stateString(state));
-        timerList.put(new Integer(state),createTimerTask(1000, inPacket));
-        packetList.put(new Integer(state), inPacket);
+      if(inPacket.synFlag || inPacket.finFlag){
+        System.out.println("Creating new TimerTask at state " + stateString(state) + " and seqNum " + seqNum);
+        timerList.put(seqNum, createTimerTask(1000, inPacket));
+        packetList.put(seqNum, inPacket);
       }
     }
     else{ //the packet is for resending, and requires the original state as the key
-      Enumeration keyList = timerList.keys();
-      Integer currKey = new Integer(-1);
       try{
-        for(int i = 0; i<10; i++){
-          currKey = (Integer)keyList.nextElement();
-
-          if(packetList.get(currKey) == inPacket){
-            System.out.println("Recreating TimerTask from state " + stateString(currKey));
-            TCPWrapper.send(inPacket, address);
-            timerList.put(currKey,createTimerTask(1000, inPacket));
-            break;
-          }
+        if(packetList.get(inPacket.seqNum) == inPacket){
+          System.out.println("Recreating TimerTask from seqNum " + inPacket.seqNum);
+          TCPWrapper.send(inPacket, address);
+          timerList.put(inPacket.seqNum, createTimerTask(1000, inPacket));
         }
       }
       catch(NoSuchElementException nsee){
+        System.err.println("Packet to resend was not fount in the packetList.");
+        nsee.printStackTrace();
       }
     }
   }
 
   private synchronized void incrementCounters(TCPPacket p){
-    ackNum = p.seqNum + 1;
+    ackNum = p.seqNum + 20 + (p.data == null ? 0 : p.data.length);
 
-    if(p.ackNum != -1)
+    if (p.ackNum != -1) {
       seqNum = p.ackNum;
+    }
   }
 
   private synchronized void cancelPacketTimer(){
@@ -151,6 +183,44 @@ class StudentSocketImpl extends BaseSocketImpl {
       timerList.remove(FIN_WAIT_1);
       packetList.remove(FIN_WAIT_1);
     }
+  }
+
+  private synchronized void cancelPacketTimersFromAck(Integer ackNum) {
+    Enumeration<Integer> keys = timerList.keys();
+    while (keys.hasMoreElements()) {
+      Integer key = keys.nextElement();
+      if (key < ackNum) {
+        timerList.remove(key);
+        packetList.remove(key);
+      }
+    }
+  }
+
+  /**
+   * initialize buffers and set up sequence numbers
+   */
+  private void initBuffers(){
+  }
+
+  /**
+   * Called by the application-layer code to copy data out of the
+   * recvBuffer into the application's space.
+   * Must block until data is available, or until terminating is true
+   * @param buffer array of bytes to return to application
+   * @param length desired maximum number of bytes to copy
+   * @return number of bytes copied (by definition > 0)
+   */
+  synchronized int getData(byte[] buffer, int length){
+    return 0;
+  }
+
+  /**
+   * accept data written by application into sendBuffer to send.
+   * Must block until ALL data is written.
+   * @param buffer array of bytes to copy into app
+   * @param length number of bytes to copy
+   */
+  synchronized void dataFromApp(byte[] buffer, int length){
   }
 
   /**
@@ -187,13 +257,14 @@ class StudentSocketImpl extends BaseSocketImpl {
     System.out.println("Packet received from address " + p.sourceAddr + " with seqNum " + p.seqNum + " is being processed.");
     System.out.print("The packet is ");
 
-    if(p.ackFlag == true && p.synFlag == true){
+    if(p.ackFlag && p.synFlag){
       System.out.println("a syn-ack.");
 
       if(state == SYN_SENT){
         //client state
+        // cancelPacketTimer();
+        cancelPacketTimersFromAck(p.ackNum);
         incrementCounters(p);
-        cancelPacketTimer();
         TCPPacket ackPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, null);
         changeToState(ESTABLISHED);
         sendPacket(ackPacket, false);
@@ -209,32 +280,36 @@ class StudentSocketImpl extends BaseSocketImpl {
         sendPacket(ackPacket, false);
       }
     }
-    else if(p.ackFlag == true){
+    else if(p.ackFlag){
       System.out.println("an ack.");
       //for the love of God, do not incrementCounters(p) in here
 
       if(state == SYN_RCVD){
         //server state
-        cancelPacketTimer();
+        // cancelPacketTimer();
+        cancelPacketTimersFromAck(p.ackNum);
         changeToState(ESTABLISHED);
       }
       else if(state == FIN_WAIT_1){
         //client state
-        cancelPacketTimer();
+        // cancelPacketTimer();
+        cancelPacketTimersFromAck(p.ackNum);
         changeToState(FIN_WAIT_2);
       }
       else if(state == LAST_ACK){
         //server state
-        cancelPacketTimer();
+        // cancelPacketTimer();
+        cancelPacketTimersFromAck(p.ackNum);
         changeToState(TIME_WAIT);
       }
       else if(state == CLOSING){
         //client or server state
-        cancelPacketTimer();
+        // cancelPacketTimer();
+        cancelPacketTimersFromAck(p.ackNum);
         changeToState(TIME_WAIT);
       }
     }
-    else if(p.synFlag == true){
+    else if(p.synFlag){
       System.out.println("a syn.");
 
       if(state == LISTEN){
@@ -257,7 +332,7 @@ class StudentSocketImpl extends BaseSocketImpl {
       }
 
     }
-    else if(p.finFlag == true){
+    else if(p.finFlag){
       System.out.println("a fin.");
 
       if(state == ESTABLISHED){
@@ -337,9 +412,7 @@ class StudentSocketImpl extends BaseSocketImpl {
    *               input stream.
    */
   public InputStream getInputStream() throws IOException {
-    // project 4 return appIS;
-    return null;
-
+    return appIS;
   }
 
   /**
@@ -353,8 +426,7 @@ class StudentSocketImpl extends BaseSocketImpl {
    *               output stream.
    */
   public OutputStream getOutputStream() throws IOException {
-    // project 4 return appOS;
-    return null;
+    return appOS;
   }
 
 
@@ -364,8 +436,12 @@ class StudentSocketImpl extends BaseSocketImpl {
    * @exception  IOException  if an I/O error occurs when closing this socket.
    */
   public synchronized void close() throws IOException {
+    if (address==null) {
+      return;
+    }
 
     System.out.println("*** close() was called by the application.");
+    terminating = true;
 
     if(state == ESTABLISHED){
       //client state
@@ -386,6 +462,17 @@ class StudentSocketImpl extends BaseSocketImpl {
       //timer task here... try the closing process again
       wantsToClose = true;
     }
+
+    while(!reader.tryClose()){
+      notifyAll();
+      try{
+        wait(1000);
+      }
+      catch(InterruptedException e){}
+    }
+    writer.close();
+
+    notifyAll();
 
     //returns immediately to the application
   }
