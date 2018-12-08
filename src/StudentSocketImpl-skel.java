@@ -264,8 +264,8 @@ class StudentSocketImpl extends BaseSocketImpl {
       sendBuffer.advance(dataPacketSize);
 
       prevPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, packetData);
-      incrementCounters(prevPacket);
       sendPacket(prevPacket, false);
+      incrementCounters(prevPacket);
       packetNum++;
     }
 
@@ -278,8 +278,8 @@ class StudentSocketImpl extends BaseSocketImpl {
       sendBuffer.advance(dataLength);
 
       prevPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, packetData);
-      incrementCounters(prevPacket);
       sendPacket(prevPacket, false);
+      incrementCounters(prevPacket);
     }
   }
 
@@ -513,8 +513,6 @@ class StudentSocketImpl extends BaseSocketImpl {
 
     System.out.println("*** close() was called by the application.");
     terminating = true;
-
-    // TODO: Send any remaining queued data.
 
     if(state == ESTABLISHED){
       //client state
