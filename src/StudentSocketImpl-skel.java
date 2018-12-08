@@ -45,7 +45,9 @@ class StudentSocketImpl extends BaseSocketImpl {
 
   private InfiniteBuffer sendBuffer;
   private InfiniteBuffer recvBuffer;
-
+  private int sendbufferDataLength = 0;
+  private int dataPacketSize = 1000;
+  private TCPPacket prevPacket = null;
 
   StudentSocketImpl(Demultiplexer D) {  // default constructor
     this.D = D;
@@ -190,6 +192,7 @@ class StudentSocketImpl extends BaseSocketImpl {
     while (keys.hasMoreElements()) {
       Integer key = keys.nextElement();
       if (key < ackNum) {
+        System.out.println("Cancelling timer for seqNum: " + key.toString());
         timerList.remove(key).cancel();
         packetList.remove(key);
       }
@@ -211,6 +214,27 @@ class StudentSocketImpl extends BaseSocketImpl {
    * @return number of bytes copied (by definition > 0)
    */
   synchronized int getData(byte[] buffer, int length){
+    while (recvBuffer == null && !terminating) {
+      try {
+        System.out.println("Waiting for recvBuffer to have data.");
+        this.wait();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }
+
+    if (recvBuffer != null) {
+      System.out.println("Getting data from buffer.");
+      if (length >= recvBuffer.getBufferSize()) {
+        recvBuffer.copyOut(buffer, recvBuffer.getBase(), recvBuffer.getBufferSize());
+        recvBuffer.advance(recvBuffer.getBufferSize());
+        return recvBuffer.getBufferSize();
+      } else {
+        recvBuffer.copyOut(buffer, recvBuffer.getBase(), length);
+        recvBuffer.advance(length);
+        return length;
+      }
+    }
     return 0;
   }
 
@@ -221,6 +245,42 @@ class StudentSocketImpl extends BaseSocketImpl {
    * @param length number of bytes to copy
    */
   synchronized void dataFromApp(byte[] buffer, int length){
+    sendBuffer = new InfiniteBuffer(length);
+    sendBuffer.append(buffer, 0, length);
+    sendData(length);
+  }
+
+  synchronized void sendData(int dataLength) {
+    System.out.println("Sending data, num packets: " + Math.ceil(dataLength / dataPacketSize));
+    int packetNum = 0;
+
+    while (dataLength - dataPacketSize >= 0) {
+      System.out.println("Sending Packet Num: " + packetNum);
+      dataLength -= dataPacketSize;
+
+      byte[] packetData = new byte[dataPacketSize];
+
+      sendBuffer.copyOut(packetData, sendBuffer.getBase(), dataPacketSize);
+      sendBuffer.advance(dataPacketSize);
+
+      prevPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, packetData);
+      incrementCounters(prevPacket);
+      sendPacket(prevPacket, false);
+      packetNum++;
+    }
+
+    if (dataLength > 0) {
+      System.out.println("Sending Packet Num: " + packetNum);
+
+      byte[] packetData = new byte[dataLength];
+
+      sendBuffer.copyOut(packetData, sendBuffer.getBase(), dataLength);
+      sendBuffer.advance(dataLength);
+
+      prevPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, packetData);
+      incrementCounters(prevPacket);
+      sendPacket(prevPacket, false);
+    }
   }
 
   /**
@@ -307,6 +367,17 @@ class StudentSocketImpl extends BaseSocketImpl {
         // cancelPacketTimer();
         cancelPacketTimersFromAck(p.ackNum);
         changeToState(TIME_WAIT);
+      }
+      else if (p.getData() != null && p.seqNum == ackNum) {
+        recvBuffer = new InfiniteBuffer(p.getData().length);
+        recvBuffer.append(p.getData(), recvBuffer.getBase(), p.getData().length);
+        this.notifyAll();
+        incrementCounters(p);
+        TCPPacket ackPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, null);
+        sendPacket(ackPacket, false);
+      }
+      else if (state == ESTABLISHED) {
+        cancelPacketTimersFromAck(p.ackNum);
       }
     }
     else if(p.synFlag){
@@ -443,6 +514,8 @@ class StudentSocketImpl extends BaseSocketImpl {
     System.out.println("*** close() was called by the application.");
     terminating = true;
 
+    // TODO: Send any remaining queued data.
+
     if(state == ESTABLISHED){
       //client state
       TCPPacket finPacket = new TCPPacket(localport, port, seqNum, ackNum, false, false, true, 1, null);
@@ -510,6 +583,10 @@ class StudentSocketImpl extends BaseSocketImpl {
     }
     else{	//its a packet that needs to be resent
       System.out.println("XXX Resending Packet");
+      System.out.println("Packet Resending: Seq: " + ((TCPPacket) ref).seqNum +
+              " Ack: " + ((TCPPacket) ref).ackNum + " AckBool: " +
+              ((TCPPacket) ref).ackFlag + " SynBool: " +
+              ((TCPPacket) ref).synFlag);
       sendPacket((TCPPacket)ref, true);
     }
   }
