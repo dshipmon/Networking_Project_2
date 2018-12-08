@@ -48,6 +48,7 @@ class StudentSocketImpl extends BaseSocketImpl {
   private int sendbufferDataLength = 0;
   private int dataPacketSize = 1000;
   private TCPPacket prevPacket = null;
+  private int base;
 
   StudentSocketImpl(Demultiplexer D) {  // default constructor
     this.D = D;
@@ -145,6 +146,7 @@ class StudentSocketImpl extends BaseSocketImpl {
       } else if (inPacket.getData() != null && inPacket.ackFlag) {
         packetList.put(seqNum, inPacket);
         if (packetList.size() == 1) {
+          base = seqNum;
           timerList.put(seqNum, createTimerTask(1000, inPacket));
         }
       }
@@ -394,7 +396,7 @@ class StudentSocketImpl extends BaseSocketImpl {
         sendPacket(ackPacket, false);
       }
       else if (state == ESTABLISHED && prevPacket != null) {
-        if (p.ackNum == seqNum + (20 + prevPacket.getData().length)) {
+        if (p.ackNum >= base) {
           seqNum = p.ackNum;
           packetList.remove(seqNum);
           timerList.remove(seqNum);
