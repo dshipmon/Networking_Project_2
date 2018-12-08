@@ -133,9 +133,6 @@ class StudentSocketImpl extends BaseSocketImpl {
   }
 
   private synchronized void sendPacket(TCPPacket inPacket, boolean resend){
-    if(inPacket.ackFlag && !inPacket.synFlag){
-      inPacket.seqNum = -2;
-    }
 
     if(!resend){ //new timer, and requires the current state as a key
       TCPWrapper.send(inPacket, address);
@@ -228,10 +225,15 @@ class StudentSocketImpl extends BaseSocketImpl {
       if (length >= recvBuffer.getBufferSize()) {
         recvBuffer.copyOut(buffer, recvBuffer.getBase(), recvBuffer.getBufferSize());
         recvBuffer.advance(recvBuffer.getBufferSize());
-        return recvBuffer.getBufferSize();
+
+        int returnLength;
+        returnLength = recvBuffer.getBufferSize();
+        recvBuffer = null;
+        return returnLength;
       } else {
         recvBuffer.copyOut(buffer, recvBuffer.getBase(), length);
         recvBuffer.advance(length);
+        recvBuffer = null;
         return length;
       }
     }
