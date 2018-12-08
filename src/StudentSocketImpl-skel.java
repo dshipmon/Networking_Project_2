@@ -15,7 +15,7 @@ class StudentSocketImpl extends BaseSocketImpl {
   private int seqNum;
   private int ackNum;
   private Hashtable<Integer, TCPTimerTask> timerList; //holds the timers for sent packets
-  private Hashtable<Integer, TCPPacket> packetList;	  //holds the packets associated with each timer
+  private LinkedHashMap<Integer, TCPPacket> packetList;	  //holds the packets associated with each timer
   //(for timer identification)
   private boolean wantsToClose = false;
   private boolean finSent = false;
@@ -55,7 +55,7 @@ class StudentSocketImpl extends BaseSocketImpl {
     seqNum = -1;
     ackNum = -1;
     timerList = new Hashtable<>();
-    packetList = new Hashtable<>();
+    packetList = new LinkedHashMap<>();
 
     try {
       pipeAppToSocket = new PipedInputStream();
@@ -142,14 +142,29 @@ class StudentSocketImpl extends BaseSocketImpl {
         System.out.println("Creating new TimerTask at state " + stateString(state) + " and seqNum " + seqNum);
         timerList.put(seqNum, createTimerTask(1000, inPacket));
         packetList.put(seqNum, inPacket);
+      } else if (inPacket.getData() != null && inPacket.ackFlag) {
+        packetList.put(seqNum, inPacket);
+        if (packetList.size() == 1) {
+          timerList.put(seqNum, createTimerTask(1000, inPacket));
+        }
       }
     }
     else{ //the packet is for resending, and requires the original state as the key
       try{
         if(packetList.get(inPacket.seqNum) == inPacket){
-          System.out.println("Recreating TimerTask from seqNum " + inPacket.seqNum);
-          TCPWrapper.send(inPacket, address);
-          timerList.put(inPacket.seqNum, createTimerTask(1000, inPacket));
+
+          if (inPacket.getData() != null && inPacket.ackFlag) {
+            for (TCPPacket packet : packetList.values()) {
+              if (packet.seqNum >= inPacket.seqNum) {
+                TCPWrapper.send(packet, address);
+              }
+            }
+            timerList.put(inPacket.seqNum, createTimerTask(1000, inPacket));
+          } else {
+            System.out.println("Recreating TimerTask from seqNum " + inPacket.seqNum);
+            TCPWrapper.send(inPacket, address);
+            timerList.put(inPacket.seqNum, createTimerTask(1000, inPacket));
+          }
         }
       }
       catch(NoSuchElementException nsee){
@@ -378,8 +393,16 @@ class StudentSocketImpl extends BaseSocketImpl {
         TCPPacket ackPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, null);
         sendPacket(ackPacket, false);
       }
-      else if (state == ESTABLISHED) {
-        cancelPacketTimersFromAck(p.ackNum);
+      else if (state == ESTABLISHED && prevPacket != null) {
+        if (p.ackNum == seqNum + (20 + prevPacket.getData().length)) {
+          seqNum = p.ackNum;
+          packetList.remove(seqNum);
+          timerList.remove(seqNum);
+        } else {
+          System.out.println("Received incorrect ack number. Got: " + p.ackNum
+                  + " Expected: " + (20 + prevPacket.getData().length));
+          // sendPacket(prevPacket, true);
+        }
       }
     }
     else if(p.synFlag){
