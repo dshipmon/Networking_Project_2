@@ -270,6 +270,14 @@ class StudentSocketImpl extends BaseSocketImpl {
   }
 
   synchronized void sendData(int dataLength) {
+    while (state != ESTABLISHED) {
+      try {
+        this.wait();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }
+
     System.out.println("Sending data, num packets: " + Math.ceil(dataLength / dataPacketSize));
     int packetNum = 0;
 
@@ -396,11 +404,11 @@ class StudentSocketImpl extends BaseSocketImpl {
         sendPacket(ackPacket, false);
       }
       else if (state == ESTABLISHED && prevPacket != null) {
-        if (p.ackNum >= base + packetList.get(base).getData().length) {
+        if (p.ackNum >= base + packetList.get(base).getData().length + 20) {
           seqNum = p.ackNum;
-          base += packetList.get(base).getData().length;
-          packetList.remove(seqNum);
-          timerList.remove(seqNum);
+          packetList.remove(base);
+          timerList.remove(base);
+          base += (packetList.get(base).getData().length + 20);
         } else {
           System.out.println("Received incorrect ack number. Got: " + p.ackNum
                   + " Expected: " + (20 + prevPacket.getData().length));
