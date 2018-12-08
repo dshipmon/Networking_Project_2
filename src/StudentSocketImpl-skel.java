@@ -396,8 +396,9 @@ class StudentSocketImpl extends BaseSocketImpl {
         sendPacket(ackPacket, false);
       }
       else if (state == ESTABLISHED && prevPacket != null) {
-        if (p.ackNum >= base) {
+        if (p.ackNum >= base + packetList.get(base).getData().length) {
           seqNum = p.ackNum;
+          base += packetList.get(base).getData().length;
           packetList.remove(seqNum);
           timerList.remove(seqNum);
         } else {
