@@ -406,9 +406,10 @@ class StudentSocketImpl extends BaseSocketImpl {
       else if (state == ESTABLISHED && prevPacket != null) {
         if (p.ackNum >= base + packetList.get(base).getData().length + 20) {
           seqNum = p.ackNum;
+          int newBase = base + (packetList.get(base).getData().length + 20);
           packetList.remove(base);
           timerList.remove(base);
-          base += (packetList.get(base).getData().length + 20);
+          base = newBase;
         } else {
           System.out.println("Received incorrect ack number. Got: " + p.ackNum
                   + " Expected: " + (20 + prevPacket.getData().length));
