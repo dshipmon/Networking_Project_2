@@ -190,7 +190,7 @@ class StudentSocketImpl extends BaseSocketImpl {
     while (keys.hasMoreElements()) {
       Integer key = keys.nextElement();
       if (key < ackNum) {
-        timerList.remove(key);
+        timerList.remove(key).cancel();
         packetList.remove(key);
       }
     }
