@@ -333,6 +333,10 @@ class StudentSocketImpl extends BaseSocketImpl {
     sendPacket(synPacket, false);
   }
 
+  public Integer getLinkedHashMapHeadKey() {
+    return packetList.keySet().iterator().next();
+  }
+
   /**
    * Called by Demultiplexer when a packet comes in for this connection
    * @param p The packet that arrived
@@ -409,7 +413,7 @@ class StudentSocketImpl extends BaseSocketImpl {
         if (!packetList.containsKey(base)) {
           System.out.println("error Getting Key");
         }
-        if (p.ackNum >= base + packetList.get(base).getData().length + 20) {
+        if (p.ackNum >= getLinkedHashMapHeadKey()) {
 
           ArrayList<Integer> keysToRemove = new ArrayList<>(1);
           for (Integer key: packetList.keySet()) {
