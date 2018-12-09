@@ -418,6 +418,7 @@ class StudentSocketImpl extends BaseSocketImpl {
                 keysToRemove.add(key);
               }
             }
+            base = base + (packetList.get(keysToRemove.get(keysToRemove.size() - 1)).getData().length + 20);
             for (Integer key: keysToRemove){
               packetList.remove(key);
               TCPTimerTask timer = timerList.remove(key);
@@ -431,12 +432,9 @@ class StudentSocketImpl extends BaseSocketImpl {
                 break;
               }
             }
+            seqNum = p.ackNum;
+            ackNum = p.seqNum;
           }
-
-          seqNum = p.ackNum;
-          ackNum = p.seqNum;
-          int newBase = base + (packetList.get(base).getData().length + 20);
-          base = newBase;
         } else {
           System.out.println("Received incorrect ack number. Got: " + p.ackNum
                   + " Expected: " + (20 + packetList.get(base).getData().length));
