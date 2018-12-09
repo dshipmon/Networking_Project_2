@@ -411,30 +411,28 @@ class StudentSocketImpl extends BaseSocketImpl {
         }
         if (p.ackNum >= base + packetList.get(base).getData().length + 20) {
 
-          if (packetList.containsKey(p.ackNum)) {
-            ArrayList<Integer> keysToRemove = new ArrayList<>(1);
-            for (Integer key: packetList.keySet()) {
-              if (key <= p.ackNum) {
-                keysToRemove.add(key);
-              }
+          ArrayList<Integer> keysToRemove = new ArrayList<>(1);
+          for (Integer key: packetList.keySet()) {
+            if (key <= p.ackNum) {
+              keysToRemove.add(key);
             }
-            base = base + (packetList.get(keysToRemove.get(keysToRemove.size() - 1)).getData().length + 20);
-            for (Integer key: keysToRemove){
-              packetList.remove(key);
-              TCPTimerTask timer = timerList.remove(key);
-              if (timer != null) {
-                timer.cancel();
-              }
-            }
-            if (timerList.size() == 0 && packetList.size() > 0) {
-              for (Integer key: packetList.keySet()) {
-                timerList.put(key, createTimerTask(1000, packetList.get(key)));
-                break;
-              }
-            }
-            seqNum = p.ackNum;
-            ackNum = p.seqNum;
           }
+          base = base + (packetList.get(keysToRemove.get(keysToRemove.size() - 1)).getData().length + 20);
+          for (Integer key: keysToRemove){
+            packetList.remove(key);
+            TCPTimerTask timer = timerList.remove(key);
+            if (timer != null) {
+              timer.cancel();
+            }
+          }
+          if (timerList.size() == 0 && packetList.size() > 0) {
+            for (Integer key: packetList.keySet()) {
+              timerList.put(key, createTimerTask(1000, packetList.get(key)));
+              break;
+            }
+          }
+          seqNum = p.ackNum;
+          ackNum = p.seqNum;
         } else {
           System.out.println("Received incorrect ack number. Got: " + p.ackNum
                   + " Expected: " + (20 + packetList.get(base).getData().length));
