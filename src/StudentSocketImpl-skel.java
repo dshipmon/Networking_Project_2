@@ -444,8 +444,8 @@ class StudentSocketImpl extends BaseSocketImpl {
           seqNum = p.ackNum;
           ackNum = p.seqNum;
         } else {
-          System.out.println("Received incorrect ack number. Got: " + p.ackNum
-                  + " Expected: " + (20 + packetList.get(base).getData().length));
+          //System.out.println("Received incorrect ack number. Got: " + p.ackNum
+          //        + " Expected: " + (20 + packetList.get(base).getData().length));
           // sendPacket(prevPacket, true);
         }
       }
