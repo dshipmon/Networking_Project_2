@@ -442,12 +442,16 @@ class StudentSocketImpl extends BaseSocketImpl {
         if (!packetList.containsKey(base)) {
           System.out.println("error Getting Key");
         }
-        if (p.ackNum == packetQeueue.peek().seqNum) {
+        if (p.ackNum == (packetQeueue.peek().seqNum + 20 + packetQeueue.peek().getData().length)) {
           packetQeueue.poll();
           cancelPacketTimersFromAck(p.ackNum + 1);
           if (packetQeueue.size() > 0) {
             sendPacket(packetQeueue.peek(), false);
+          } else {
+            this.notifyAll();
           }
+          seqNum = p.ackNum;
+          ackNum = p.seqNum;
         }
         /*
         if (p.ackNum >= getLinkedHashMapHeadKey()) {
@@ -614,7 +618,7 @@ class StudentSocketImpl extends BaseSocketImpl {
     System.out.println("*** close() was called by the application.");
     terminating = true;
 
-    while (packetList.size() > 0) {
+    while (packetQeueue.size() > 0) {
       try {
         this.wait();
       } catch (InterruptedException e) {
