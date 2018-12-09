@@ -334,7 +334,13 @@ class StudentSocketImpl extends BaseSocketImpl {
   }
 
   public Integer getLinkedHashMapHeadKey() {
-    return packetList.keySet().iterator().next();
+    Integer minKey = Integer.MAX_VALUE;
+    for (Integer key: packetList.keySet()) {
+      if (key < minKey) {
+        minKey = key;
+      }
+    }
+    return minKey;
   }
 
   /**
