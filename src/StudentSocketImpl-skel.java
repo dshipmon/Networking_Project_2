@@ -436,10 +436,8 @@ class StudentSocketImpl extends BaseSocketImpl {
             }
           }
           if (timerList.size() == 0 && packetList.size() > 0) {
-            for (Integer key: packetList.keySet()) {
-              timerList.put(key, createTimerTask(1000, packetList.get(key)));
-              break;
-            }
+            Integer key = getLinkedHashMapHeadKey();
+            timerList.put(key, createTimerTask(1000, packetList.get(key)));
           }
           seqNum = p.ackNum;
           ackNum = p.seqNum;
