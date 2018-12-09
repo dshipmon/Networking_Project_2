@@ -584,6 +584,14 @@ class StudentSocketImpl extends BaseSocketImpl {
     System.out.println("*** close() was called by the application.");
     terminating = true;
 
+    while (packetList.size() > 0) {
+      try {
+        this.wait();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }
+
     if(state == ESTABLISHED){
       //client state
       TCPPacket finPacket = new TCPPacket(localport, port, seqNum, ackNum, false, false, true, 1, null);
