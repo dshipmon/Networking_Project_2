@@ -409,16 +409,37 @@ class StudentSocketImpl extends BaseSocketImpl {
         if (!packetList.containsKey(base)) {
           System.out.println("error Getting Key");
         }
-        if (p.ackNum == base + packetList.get(base).getData().length + 20) {
+        if (p.ackNum >= base + packetList.get(base).getData().length + 20) {
+
+          if (packetList.containsKey(p.ackNum)) {
+            ArrayList<Integer> keysToRemove = new ArrayList<>(1);
+            for (Integer key: packetList.keySet()) {
+              if (key <= p.ackNum) {
+                keysToRemove.add(key);
+              }
+            }
+            for (Integer key: keysToRemove){
+              packetList.remove(key);
+              TCPTimerTask timer = timerList.remove(key);
+              if (timer != null) {
+                timer.cancel();
+              }
+            }
+            if (timerList.size() == 0 && packetList.size() > 0) {
+              for (Integer key: packetList.keySet()) {
+                timerList.put(key, createTimerTask(1000, packetList.get(key)));
+                break;
+              }
+            }
+          }
+
           seqNum = p.ackNum;
           ackNum = p.seqNum;
           int newBase = base + (packetList.get(base).getData().length + 20);
-          packetList.remove(base);
-          timerList.remove(base);
           base = newBase;
         } else {
           System.out.println("Received incorrect ack number. Got: " + p.ackNum
-                  + " Expected: " + (20 + prevPacket.getData().length));
+                  + " Expected: " + (20 + packetList.get(base).getData().length));
           // sendPacket(prevPacket, true);
         }
       }
