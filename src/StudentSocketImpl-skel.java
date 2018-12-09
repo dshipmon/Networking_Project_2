@@ -292,7 +292,7 @@ class StudentSocketImpl extends BaseSocketImpl {
 
       prevPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, packetData);
       sendPacket(prevPacket, false);
-      incrementCounters(prevPacket);
+      seqNum = seqNum + 20 + prevPacket.data.length;
       packetNum++;
     }
 
@@ -306,7 +306,7 @@ class StudentSocketImpl extends BaseSocketImpl {
 
       prevPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, packetData);
       sendPacket(prevPacket, false);
-      incrementCounters(prevPacket);
+      seqNum = seqNum + 20 + prevPacket.data.length;
     }
   }
 
@@ -396,16 +396,22 @@ class StudentSocketImpl extends BaseSocketImpl {
         changeToState(TIME_WAIT);
       }
       else if (p.getData() != null && p.seqNum == ackNum) {
+        System.out.println("Received and accepted data.");
+
         recvBuffer = new InfiniteBuffer(p.getData().length);
         recvBuffer.append(p.getData(), recvBuffer.getBase(), p.getData().length);
         this.notifyAll();
-        incrementCounters(p);
+        ackNum = ackNum + p.getData().length + 20;
         TCPPacket ackPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, null);
         sendPacket(ackPacket, false);
       }
-      else if (state == ESTABLISHED && prevPacket != null) {
-        if (p.ackNum >= base + packetList.get(base).getData().length + 20) {
+      else if (state == ESTABLISHED && prevPacket != null && p.getData() == null) {
+        if (!packetList.containsKey(base)) {
+          System.out.println("error Getting Key");
+        }
+        if (p.ackNum == base + packetList.get(base).getData().length + 20) {
           seqNum = p.ackNum;
+          ackNum = p.seqNum;
           int newBase = base + (packetList.get(base).getData().length + 20);
           packetList.remove(base);
           timerList.remove(base);
