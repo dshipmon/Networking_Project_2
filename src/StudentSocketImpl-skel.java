@@ -1,6 +1,7 @@
 import java.net.*;
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.LinkedBlockingQueue;
 
 class StudentSocketImpl extends BaseSocketImpl {
 
@@ -49,6 +50,7 @@ class StudentSocketImpl extends BaseSocketImpl {
   private int dataPacketSize = 1000;
   private TCPPacket prevPacket = null;
   private int base;
+  private LinkedBlockingQueue<TCPPacket> packetQeueue;
 
   StudentSocketImpl(Demultiplexer D) {  // default constructor
     this.D = D;
@@ -57,6 +59,7 @@ class StudentSocketImpl extends BaseSocketImpl {
     ackNum = -1;
     timerList = new Hashtable<>();
     packetList = new LinkedHashMap<>();
+    packetQeueue = new LinkedBlockingQueue<>();
 
     try {
       pipeAppToSocket = new PipedInputStream();
@@ -136,19 +139,35 @@ class StudentSocketImpl extends BaseSocketImpl {
   private synchronized void sendPacket(TCPPacket inPacket, boolean resend){
 
     if(!resend){ //new timer, and requires the current state as a key
-      TCPWrapper.send(inPacket, address);
+      if (inPacket.getData() == null) { ///TODO: REMOVE IF CLAUSE IF REVERTING
+        TCPWrapper.send(inPacket, address);
+      }
 
+      if (inPacket.getData() != null && inPacket == packetQeueue.peek()) {
+        TCPWrapper.send(inPacket, address);
+        timerList.put(inPacket.seqNum, createTimerTask(1000, inPacket));
+      }
       //only do timers for syns, syn-acks, and fins
-      if(inPacket.synFlag || inPacket.finFlag){
+      else if(inPacket.synFlag || inPacket.finFlag){
         System.out.println("Creating new TimerTask at state " + stateString(state) + " and seqNum " + seqNum);
         timerList.put(seqNum, createTimerTask(1000, inPacket));
         packetList.put(seqNum, inPacket);
       } else if (inPacket.getData() != null && inPacket.ackFlag) {
-        packetList.put(seqNum, inPacket);
-        if (packetList.size() == 1) {
-          base = seqNum;
-          timerList.put(seqNum, createTimerTask(1000, inPacket));
+        try {
+          packetQeueue.put(inPacket);
+          packetList.put(seqNum, inPacket);
+          if (packetQeueue.peek() == inPacket) {
+            TCPWrapper.send(inPacket, address);
+            timerList.put(seqNum, createTimerTask(1000, inPacket));
+          }
+        } catch (InterruptedException e) {
+          e.printStackTrace();
         }
+        //packetList.put(seqNum, inPacket);
+        // if (packetList.size() == 1) {
+        //  base = seqNum;
+        //  timerList.put(seqNum, createTimerTask(1000, inPacket));
+        //}
       }
     }
     else{ //the packet is for resending, and requires the original state as the key
@@ -156,12 +175,16 @@ class StudentSocketImpl extends BaseSocketImpl {
         if(packetList.get(inPacket.seqNum) == inPacket){
 
           if (inPacket.getData() != null && inPacket.ackFlag) {
-            for (TCPPacket packet : packetList.values()) {
-              if (packet.seqNum >= inPacket.seqNum) {
-                TCPWrapper.send(packet, address);
-              }
+            if (inPacket == packetQeueue.peek()) {
+              TCPWrapper.send(inPacket, address);
+              timerList.put(inPacket.seqNum, createTimerTask(1000, inPacket));
             }
-            timerList.put(inPacket.seqNum, createTimerTask(1000, inPacket));
+            //for (TCPPacket packet : packetList.values()) {
+            //  if (packet.seqNum >= inPacket.seqNum) {
+            //    TCPWrapper.send(packet, address);
+            //  }
+            //}
+            //timerList.put(inPacket.seqNum, createTimerTask(1000, inPacket));
           } else {
             System.out.println("Recreating TimerTask from seqNum " + inPacket.seqNum);
             TCPWrapper.send(inPacket, address);
@@ -419,6 +442,14 @@ class StudentSocketImpl extends BaseSocketImpl {
         if (!packetList.containsKey(base)) {
           System.out.println("error Getting Key");
         }
+        if (p.ackNum == packetQeueue.peek().seqNum) {
+          packetQeueue.poll();
+          cancelPacketTimersFromAck(p.ackNum + 1);
+          if (packetQeueue.size() > 0) {
+            sendPacket(packetQeueue.peek(), false);
+          }
+        }
+        /*
         if (p.ackNum >= getLinkedHashMapHeadKey()) {
 
           ArrayList<Integer> keysToRemove = new ArrayList<>(1);
@@ -446,6 +477,7 @@ class StudentSocketImpl extends BaseSocketImpl {
           //        + " Expected: " + (20 + packetList.get(base).getData().length));
           // sendPacket(prevPacket, true);
         }
+        */
       }
     }
     else if(p.synFlag){
