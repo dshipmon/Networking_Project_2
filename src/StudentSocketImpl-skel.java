@@ -155,6 +155,7 @@ class StudentSocketImpl extends BaseSocketImpl {
       } else if (inPacket.getData() != null && inPacket.ackFlag) {
         try {
           packetQeueue.put(inPacket);
+          System.out.println("Inserting Packet With SeqNum Number: " + inPacket.seqNum + " and ACK Num: " + inPacket.ackNum);
           packetList.put(seqNum, inPacket);
           if (packetQeueue.peek() == inPacket) {
             TCPWrapper.send(inPacket, address);
@@ -450,7 +451,6 @@ class StudentSocketImpl extends BaseSocketImpl {
           } else {
             this.notifyAll();
           }
-          seqNum = p.ackNum;
           ackNum = p.seqNum;
         }
         /*
