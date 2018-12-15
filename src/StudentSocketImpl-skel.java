@@ -46,7 +46,6 @@ class StudentSocketImpl extends BaseSocketImpl {
 
   private InfiniteBuffer sendBuffer;
   private InfiniteBuffer recvBuffer;
-  private int sendbufferDataLength = 0;
   private int dataPacketSize = 1000;
   private TCPPacket prevPacket = null;
   private int base;
@@ -164,11 +163,6 @@ class StudentSocketImpl extends BaseSocketImpl {
         } catch (InterruptedException e) {
           e.printStackTrace();
         }
-        //packetList.put(seqNum, inPacket);
-        // if (packetList.size() == 1) {
-        //  base = seqNum;
-        //  timerList.put(seqNum, createTimerTask(1000, inPacket));
-        //}
       }
     }
     else{ //the packet is for resending, and requires the original state as the key
@@ -180,12 +174,6 @@ class StudentSocketImpl extends BaseSocketImpl {
               TCPWrapper.send(inPacket, address);
               timerList.put(inPacket.seqNum, createTimerTask(1000, inPacket));
             }
-            //for (TCPPacket packet : packetList.values()) {
-            //  if (packet.seqNum >= inPacket.seqNum) {
-            //    TCPWrapper.send(packet, address);
-            //  }
-            //}
-            //timerList.put(inPacket.seqNum, createTimerTask(1000, inPacket));
           } else {
             System.out.println("Recreating TimerTask from seqNum " + inPacket.seqNum);
             TCPWrapper.send(inPacket, address);
@@ -313,6 +301,7 @@ class StudentSocketImpl extends BaseSocketImpl {
 
       sendBuffer.copyOut(packetData, sendBuffer.getBase(), dataPacketSize);
       sendBuffer.advance(dataPacketSize);
+      System.out.println("Inserted the following data into sendBuffer: " + new String(packetData));
 
       prevPacket = new TCPPacket(localport, port, seqNum, ackNum, true, false, false, 1, packetData);
       sendPacket(prevPacket, false);
@@ -355,16 +344,6 @@ class StudentSocketImpl extends BaseSocketImpl {
     TCPPacket synPacket = new TCPPacket(localport, port, seqNum, ackNum, false, true, false, 1, null);
     changeToState(SYN_SENT);
     sendPacket(synPacket, false);
-  }
-
-  public Integer getLinkedHashMapHeadKey() {
-    Integer minKey = Integer.MAX_VALUE;
-    for (Integer key: packetList.keySet()) {
-      if (key < minKey) {
-        minKey = key;
-      }
-    }
-    return minKey;
   }
 
   /**
@@ -431,7 +410,7 @@ class StudentSocketImpl extends BaseSocketImpl {
       }
       else if (p.getData() != null && p.seqNum == ackNum) {
         System.out.println("Received and accepted data.");
-
+        System.out.println("Received the following data, put into recvBuffer: " + new String(p.getData()));
         recvBuffer = new InfiniteBuffer(p.getData().length);
         recvBuffer.append(p.getData(), recvBuffer.getBase(), p.getData().length);
         this.notifyAll();
@@ -453,35 +432,6 @@ class StudentSocketImpl extends BaseSocketImpl {
           }
           ackNum = p.seqNum;
         }
-        /*
-        if (p.ackNum >= getLinkedHashMapHeadKey()) {
-
-          ArrayList<Integer> keysToRemove = new ArrayList<>(1);
-          for (Integer key: packetList.keySet()) {
-            if (key <= p.ackNum) {
-              keysToRemove.add(key);
-            }
-          }
-          base = base + (packetList.get(keysToRemove.get(keysToRemove.size() - 1)).getData().length + 20);
-          for (Integer key: keysToRemove){
-            packetList.remove(key);
-            TCPTimerTask timer = timerList.remove(key);
-            if (timer != null) {
-              timer.cancel();
-            }
-          }
-          if (timerList.size() == 0 && packetList.size() > 0) {
-            Integer key = getLinkedHashMapHeadKey();
-            timerList.put(key, createTimerTask(1000, packetList.get(key)));
-          }
-          seqNum = p.ackNum;
-          ackNum = p.seqNum;
-        } else {
-          //System.out.println("Received incorrect ack number. Got: " + p.ackNum
-          //        + " Expected: " + (20 + packetList.get(base).getData().length));
-          // sendPacket(prevPacket, true);
-        }
-        */
       }
     }
     else if(p.synFlag){
